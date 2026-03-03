@@ -196,17 +196,90 @@ function buildScene() {
   SPRITES.push({ x: 12.5, y: 5.6, t: 6, name: "LIBRARY" });
   SPRITES.push({ x: 26.6, y: 12.8, t: 7, name: "CAFE" });
   SPRITES.push({ x: 8.8, y: 31.2, t: 8, name: "SCHOOL" });
+
+  // Checkpoint marker (type 10) - visible until triggered
+  SPRITES.push({
+    x: MANIC_CHECKPOINT_ZONE.x,
+    y: MANIC_CHECKPOINT_ZONE.y,
+    t: 10,
+  });
+
+  // Misleading "HOSPITAL" signs (type 9) - only visible in manic mode
+  // These point AWAY from the actual hospital (GB is at 33.5, 34.5)
+  // Hospital is in bottom-right, so these signs point in opposite directions
+  SPRITES.push({ x: 26.5, y: 30.5, t: 9, dir: Math.PI }); // Points LEFT (away from hospital)
+  SPRITES.push({ x: 30.5, y: 26.5, t: 9, dir: -Math.PI / 2 }); // Points UP (away from hospital)
+  SPRITES.push({ x: 28.5, y: 28.5, t: 9, dir: Math.PI * 0.75 }); // Points UP-LEFT (away)
+  SPRITES.push({ x: 32.5, y: 30.5, t: 9, dir: Math.PI / 2 }); // Points DOWN when near goal
+  SPRITES.push({ x: 30.5, y: 32.5, t: 9, dir: 0 }); // Points RIGHT (away from actual entrance)
+
+  // Additional misleading signs scattered throughout the map
+  SPRITES.push({ x: 22.5, y: 26.5, t: 9, dir: Math.PI / 4 }); // Points UP-RIGHT (wrong)
+  SPRITES.push({ x: 24.5, y: 32.5, t: 9, dir: -Math.PI / 2 }); // Points UP (wrong)
+  SPRITES.push({ x: 28.5, y: 24.5, t: 9, dir: Math.PI }); // Points LEFT (wrong)
+  SPRITES.push({ x: 33.5, y: 28.5, t: 9, dir: Math.PI / 2 }); // Points DOWN (wrong)
+  SPRITES.push({ x: 25.5, y: 28.5, t: 9, dir: -Math.PI * 0.6 }); // Points UP-LEFT (wrong)
+  SPRITES.push({ x: 31.5, y: 31.5, t: 9, dir: Math.PI * 1.3 }); // Points LEFT-DOWN (wrong)
+  SPRITES.push({ x: 27.5, y: 33.5, t: 9, dir: 0 }); // Points RIGHT (wrong)
+  SPRITES.push({ x: 29.5, y: 29.5, t: 9, dir: -Math.PI / 4 }); // Points UP-RIGHT (wrong)
+
+  // Signs pointing to wrong buildings (early in journey)
+  SPRITES.push({ x: 20.5, y: 22.5, t: 9, dir: Math.PI / 2 }); // Misleads early
+  SPRITES.push({ x: 23.5, y: 19.5, t: 9, dir: 0 }); // Points RIGHT (wrong)
+  SPRITES.push({ x: 21.5, y: 25.5, t: 9, dir: Math.PI * 0.8 }); // Confusing angle
 }
 
 // ── Game state ───────────────────────────────────────────────
-let gameState = "intro";
+let gameState = "warning"; // Start with warning screen
 let pulse = 0;
 const KEYS = {};
+
+// ── Accessibility Settings ───────────────────────────────────
+let reducedEffectsMode = false;
+let skipManicEpisode = false;
+
+// ── Manic Episode State ──────────────────────────────────────
+let manicMode = false;
+const MANIC_CHECKPOINT_ZONE = { x: 18.5, y: 18.5, radius: 2.5 }; // Visible zone at intersection
+const MANIC_SPEED_MULTIPLIER = 3.5; // Much faster movement
+let hasPassedCheckpoint = false;
+let initialDistanceToGoal = 0; // Calculated at start
+let checkpointWarningShown = false;
+let shakeOffsetX = 0;
+let shakeOffsetY = 0;
+
+// Enhanced manic episode variables
+let manicIntensity = 0; // 0 to 1, gradually increases
+let manicStartTime = 0; // When manic mode started
+const MANIC_RAMP_DURATION = 45; // Seconds to reach max intensity
+let screenRotation = 0; // Screen rotation angle
+let colorShift = 0; // Color distortion amount
+let tunnelVisionAmount = 0; // Vignette strength
+let controlInversion = 0; // 0 to 1, how inverted controls are
+let controlDrift = 0; // Random input drift
+let hudGlitchAmount = 0; // HUD glitching intensity
+let phantomSprites = []; // Dynamic misleading sprites
 
 function resetGame() {
   P = { x: GA.x, y: GA.y, a: -0.5, spd: 0 };
   if (solid(P.x, P.y)) P.x += 1;
   pulse = 0;
+  manicMode = false;
+  hasPassedCheckpoint = false;
+  checkpointWarningShown = false;
+  initialDistanceToGoal = Math.hypot(GB.x - GA.x, GB.y - GA.y);
+
+  // Reset enhanced manic variables
+  manicIntensity = 0;
+  manicStartTime = 0;
+  screenRotation = 0;
+  colorShift = 0;
+  tunnelVisionAmount = 0;
+  controlInversion = 0;
+  controlDrift = 0;
+  hudGlitchAmount = 0;
+  phantomSprites = [];
+
   buildScene();
 }
 
@@ -225,6 +298,28 @@ document.addEventListener("keyup", (e) => {
 });
 
 // ── Buttons ──────────────────────────────────────────────────
+document.getElementById("btn-acknowledge").onclick = () => {
+  document.getElementById("screen-warning").style.display = "none";
+  document.getElementById("screen-intro").style.display = "flex";
+  gameState = "intro";
+};
+
+document.getElementById("btn-settings").onclick = () => {
+  document.getElementById("screen-warning").style.display = "none";
+  document.getElementById("screen-settings").style.display = "flex";
+};
+
+document.getElementById("btn-back-to-warning").onclick = () => {
+  // Save settings
+  reducedEffectsMode = document.getElementById(
+    "setting-reduced-effects",
+  ).checked;
+  skipManicEpisode = document.getElementById("setting-skip-manic").checked;
+
+  document.getElementById("screen-settings").style.display = "none";
+  document.getElementById("screen-warning").style.display = "flex";
+};
+
 document.getElementById("btn-start").onclick = () => {
   resetGame();
   showGame();
@@ -301,6 +396,49 @@ function loop(t) {
   if (gameState !== "playing") return;
 
   pulse += dt;
+
+  // Update manic intensity (progressive escalation)
+  if (manicMode && !skipManicEpisode) {
+    if (manicStartTime === 0) manicStartTime = pulse;
+    let elapsed = pulse - manicStartTime;
+
+    // Exponential ramp: starts slow, accelerates
+    let rawIntensity = Math.min(1, elapsed / MANIC_RAMP_DURATION);
+    rawIntensity = rawIntensity * rawIntensity; // Square for exponential feel
+
+    // Cap at 0.5 if reduced effects mode
+    manicIntensity = reducedEffectsMode
+      ? Math.min(0.5, rawIntensity)
+      : rawIntensity;
+
+    // Update derived effect values
+    colorShift = manicIntensity * 0.4; // 0 to 0.4
+    tunnelVisionAmount = manicIntensity * 0.85; // 0 to 0.85 (increased from 0.7)
+    controlInversion = Math.max(0, manicIntensity - 0.3) / 0.7; // Starts at 30% intensity
+    controlDrift = manicIntensity * 0.3;
+    hudGlitchAmount = manicIntensity;
+    screenRotation = Math.sin(pulse * 2.5) * manicIntensity * 0.08; // Gentle rotation
+
+    // Enhanced screen shake
+    let baseShake = 3.5;
+    let shakeIntensity = baseShake * (1 + manicIntensity * 2.5);
+    shakeOffsetX = (Math.random() - 0.5) * shakeIntensity;
+    shakeOffsetY = (Math.random() - 0.5) * shakeIntensity;
+
+    // Spawn phantom misleading sprites periodically at high intensity
+    if (manicIntensity > 0.6 && Math.random() < 0.01) {
+      spawnPhantomSprite();
+    }
+  } else if (manicMode && skipManicEpisode) {
+    // Skip manic effects but keep speed multiplier
+    manicIntensity = 0;
+    shakeOffsetX = 0;
+    shakeOffsetY = 0;
+  } else {
+    shakeOffsetX = 0;
+    shakeOffsetY = 0;
+  }
+
   update(dt);
   render();
   updateHUD();
@@ -313,17 +451,78 @@ requestAnimationFrame(loop);
 //  UPDATE
 // ================================================================
 function update(dt) {
-  // Turn
-  if (KEYS["ArrowLeft"] || KEYS["KeyA"]) P.a -= TURN_SPEED * dt;
-  if (KEYS["ArrowRight"] || KEYS["KeyD"]) P.a += TURN_SPEED * dt;
+  // Check for manic episode checkpoint with dual trigger system
+  if (!hasPassedCheckpoint) {
+    let currentDistToGoal = Math.hypot(P.x - GB.x, P.y - GB.y);
+    let progressPercent = 1 - currentDistToGoal / initialDistanceToGoal;
 
-  // Acceleration
-  if (KEYS["ArrowUp"] || KEYS["KeyW"]) {
-    P.spd += ACCEL * dt;
-    if (P.spd > MOVE_SPEED) P.spd = MOVE_SPEED;
-  } else if (KEYS["ArrowDown"] || KEYS["KeyS"]) {
-    P.spd -= ACCEL * 0.6 * dt;
-    if (P.spd < -MOVE_SPEED * 0.45) P.spd = -MOVE_SPEED * 0.45;
+    // Trigger 1: Entered the visible checkpoint zone
+    let distToCheckpoint = Math.hypot(
+      P.x - MANIC_CHECKPOINT_ZONE.x,
+      P.y - MANIC_CHECKPOINT_ZONE.y,
+    );
+
+    // Trigger 2: Made 40% progress toward hospital
+    let shouldTrigger =
+      distToCheckpoint < MANIC_CHECKPOINT_ZONE.radius || progressPercent >= 0.4;
+
+    // Warning when getting close
+    if (
+      !checkpointWarningShown &&
+      (distToCheckpoint < MANIC_CHECKPOINT_ZONE.radius + 5 ||
+        progressPercent >= 0.3)
+    ) {
+      checkpointWarningShown = true;
+    }
+
+    if (shouldTrigger) {
+      hasPassedCheckpoint = true;
+      manicMode = true;
+    }
+  }
+
+  // Apply manic mode speed multiplier
+  let speedMult = manicMode ? MANIC_SPEED_MULTIPLIER : 1.0;
+  let maxSpeed = MOVE_SPEED * speedMult;
+  let accelRate = ACCEL * speedMult;
+
+  // Add speed pulsing in manic mode
+  if (manicMode && manicIntensity > 0.4) {
+    speedMult *= 1 + Math.sin(pulse * 3) * 0.15 * manicIntensity;
+    maxSpeed = MOVE_SPEED * speedMult;
+  }
+
+  // Turn with control disruption
+  let turnInput = 0;
+  if (KEYS["ArrowLeft"] || KEYS["KeyA"]) turnInput -= 1;
+  if (KEYS["ArrowRight"] || KEYS["KeyD"]) turnInput += 1;
+
+  // Apply control inversion and drift
+  if (manicMode && !skipManicEpisode) {
+    // Gradually invert controls
+    turnInput = turnInput * (1 - controlInversion * 2); // -1 = fully inverted
+    // Add random drift
+    turnInput += (Math.random() - 0.5) * controlDrift * 2;
+  }
+
+  P.a += turnInput * TURN_SPEED * dt;
+
+  // Acceleration with control disruption
+  let accelInput = 0;
+  if (KEYS["ArrowUp"] || KEYS["KeyW"]) accelInput = 1;
+  else if (KEYS["ArrowDown"] || KEYS["KeyS"]) accelInput = -0.6;
+
+  // Apply drift to acceleration in manic mode
+  if (manicMode && !skipManicEpisode) {
+    accelInput += (Math.random() - 0.5) * controlDrift;
+  }
+
+  if (accelInput > 0) {
+    P.spd += accelRate * accelInput * dt;
+    if (P.spd > maxSpeed) P.spd = maxSpeed;
+  } else if (accelInput < 0) {
+    P.spd += accelRate * accelInput * dt;
+    if (P.spd < -maxSpeed * 0.45) P.spd = -maxSpeed * 0.45;
   } else {
     // Coast
     if (P.spd > 0) {
@@ -363,6 +562,40 @@ function update(dt) {
   // Goal check: A -> B ONLY
   let dd = Math.hypot(P.x - GB.x, P.y - GB.y);
   if (dd < GOAL_R) showWin();
+
+  // Fade out old phantom sprites
+  phantomSprites = phantomSprites.filter((ps) => {
+    ps.life -= dt;
+    return ps.life > 0;
+  });
+}
+
+// ── Phantom Sprite Spawning ──────────────────────────────────
+function spawnPhantomSprite() {
+  // Random position near player
+  let angle = Math.random() * Math.PI * 2;
+  let dist = 5 + Math.random() * 10;
+  let x = P.x + Math.cos(angle) * dist;
+  let y = P.y + Math.sin(angle) * dist;
+
+  // Make sure it's somewhat visible
+  x = Math.max(1, Math.min(COLS - 1, x));
+  y = Math.max(1, Math.min(ROWS - 1, y));
+
+  // Random misleading type
+  let types = [
+    { t: 9, dir: Math.random() * Math.PI * 2 }, // Misleading sign
+    { t: 4 }, // Fake hospital
+    { t: 5, r: 255, g: 100, b: 100 }, // Phantom car
+  ];
+
+  let phantom = types[Math.floor(Math.random() * types.length)];
+  phantom.x = x;
+  phantom.y = y;
+  phantom.life = 2 + Math.random() * 3; // 2-5 seconds
+  phantom.isPhantom = true;
+
+  phantomSprites.push(phantom);
 }
 
 // ================================================================
@@ -381,6 +614,15 @@ function render() {
     let r = (160 + t * 55) | 0;
     let g = (210 + t * 22) | 0;
     let b = (255 - t * 10) | 0;
+
+    // Apply color distortion in manic mode
+    if (manicMode && colorShift > 0) {
+      let shift = colorShift * 100;
+      r = Math.min(255, r + shift * (0.5 + Math.sin(pulse * 4 + y * 0.1)));
+      g = Math.max(0, g - shift * 0.3);
+      b = Math.max(0, b - shift * 0.5);
+    }
+
     let col = 0xff000000 | (b << 16) | (g << 8) | r; // ABGR
     buf.fill(col, y * W2, y * W2 + W2);
   }
@@ -650,6 +892,13 @@ function render() {
   NPCS.forEach((n) =>
     all.push({ x: n.x, y: n.y, t: 5, r: n.r, g: n.g, b: n.b }),
   );
+  // Add phantom sprites in manic mode
+  if (manicMode) {
+    phantomSprites.forEach((ps) => {
+      let alpha = Math.min(1, ps.life / 2); // Fade in/out
+      all.push({ ...ps, alpha });
+    });
+  }
   all.sort(
     (a, b) =>
       Math.hypot(b.x - P.x, b.y - P.y) - Math.hypot(a.x - P.x, a.y - P.y),
@@ -657,6 +906,14 @@ function render() {
 
   // Commit world
   ctx.putImageData(imgData, 0, 0);
+
+  // Apply screen shake and rotation for manic mode
+  if (manicMode && !skipManicEpisode) {
+    ctx.save();
+    ctx.translate(W / 2, H / 2);
+    ctx.rotate(screenRotation);
+    ctx.translate(-W / 2 + shakeOffsetX, -H / 2 + shakeOffsetY);
+  }
 
   // Draw sprites
   for (const sp of all) {
@@ -678,7 +935,7 @@ function render() {
     let startY = (hor - spH / 2) | 0;
 
     ctx.save();
-    ctx.globalAlpha = fog;
+    ctx.globalAlpha = fog * (sp.alpha !== undefined ? sp.alpha : 1); // Support phantom alpha
 
     if (sp.t === 0) drawTree(sx, startY, spW, spH, sd, fog);
     else if (sp.t === 1) drawStop(sx, startY, spW, spH, sd, fog);
@@ -697,10 +954,62 @@ function render() {
     } else if (sp.t === 8) {
       drawSchool(sx, startY, spW, spH, sd, fog);
       drawLabelAbove(sx, startY, spW, sd, fog, sp.name || "SCHOOL");
+    } else if (sp.t === 9 && manicMode) {
+      drawMisleadingSign(sx, startY, spW, spH, sd, fog, sp.dir);
+    } else if (sp.t === 10 && !hasPassedCheckpoint) {
+      drawCheckpointMarker(sx, startY, spW, spH, sd, fog);
     } else if (sp.t === 5)
       drawCar3D(startX, startY, spW, spH, sd, fog, sp.r, sp.g, sp.b);
 
     ctx.restore();
+  }
+
+  // Restore transform after screen shake/rotation
+  if (manicMode && !skipManicEpisode) {
+    ctx.restore();
+  }
+
+  // Apply tunnel vision vignette in manic mode
+  if (manicMode && tunnelVisionAmount > 0 && !skipManicEpisode) {
+    let centerX = W / 2;
+    let centerY = H / 2;
+    let maxRadius = Math.sqrt(centerX * centerX + centerY * centerY);
+
+    // Inner clear radius shrinks as intensity increases
+    let innerRadius = maxRadius * (0.5 - tunnelVisionAmount * 0.35); // Shrinks more aggressively
+    let outerRadius = maxRadius * 1.2;
+
+    let gradient = ctx.createRadialGradient(
+      centerX,
+      centerY,
+      innerRadius,
+      centerX,
+      centerY,
+      outerRadius,
+    );
+    gradient.addColorStop(0, "rgba(0, 0, 0, 0)");
+    gradient.addColorStop(0.3, `rgba(0, 0, 0, ${tunnelVisionAmount * 0.2})`);
+    gradient.addColorStop(0.6, `rgba(0, 0, 0, ${tunnelVisionAmount * 0.6})`);
+    gradient.addColorStop(
+      1,
+      `rgba(0, 0, 0, ${Math.min(0.95, tunnelVisionAmount * 0.95)})`,
+    );
+
+    ctx.fillStyle = gradient;
+    ctx.fillRect(0, 0, W, H);
+
+    // Pulsing breathing effect - stronger and more noticeable
+    if (tunnelVisionAmount > 0.4) {
+      let pulse_alpha = Math.sin(pulse * 2.5) * 0.2 * tunnelVisionAmount;
+      ctx.fillStyle = `rgba(0, 0, 0, ${Math.max(0, pulse_alpha)})`;
+      ctx.fillRect(0, 0, W, H);
+    }
+
+    // Add slight blur/noise effect at edges for extra disorientation
+    if (tunnelVisionAmount > 0.6) {
+      ctx.fillStyle = `rgba(${Math.random() * 30}, 0, 0, ${tunnelVisionAmount * 0.1})`;
+      ctx.fillRect(0, 0, W, H);
+    }
   }
 }
 
@@ -798,6 +1107,149 @@ function drawStop(cx, sy, sw, sh, sd, fog) {
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
     ctx.fillText("STOP", cx, ocy);
+  }
+}
+
+function drawMisleadingSign(cx, sy, sw, sh, sd, fog, direction) {
+  if (!colOk(cx, sd)) return;
+  let f = fog;
+
+  // Flashing effect to make it more attention-grabbing
+  let flashIntensity = (Math.sin(pulse * 8) + 1) / 2;
+
+  // Pole
+  let pw = Math.max(2, sw * 0.1),
+    ph = sh * 0.5;
+  ctx.fillStyle = `rgb(${(155 * f) | 0},${(155 * f) | 0},${(155 * f) | 0})`;
+  ctx.fillRect(cx - pw / 2, sy + sh * 0.5, pw, ph);
+
+  // Sign board (bright yellow/orange to catch attention)
+  let signW = sw * 0.8,
+    signH = sh * 0.35;
+  let signX = cx - signW / 2,
+    signY = sy + sh * 0.15;
+
+  let brightness = 0.7 + flashIntensity * 0.3;
+  ctx.fillStyle = `rgb(${(255 * f * brightness) | 0},${(200 * f * brightness) | 0},${(50 * f * brightness) | 0})`;
+  ctx.roundRect(signX, signY, signW, signH, Math.max(2, sw * 0.05));
+  ctx.fill();
+
+  // Border
+  ctx.strokeStyle = `rgb(${(200 * f) | 0},${(100 * f) | 0},${(0 * f) | 0})`;
+  ctx.lineWidth = Math.max(1, sw * 0.04);
+  ctx.roundRect(signX, signY, signW, signH, Math.max(2, sw * 0.05));
+  ctx.stroke();
+
+  // Arrow pointing in misleading direction
+  ctx.save();
+  ctx.translate(cx, signY + signH / 2);
+  ctx.rotate(direction);
+
+  let arrowSize = Math.min(signW, signH) * 0.4;
+  ctx.fillStyle = `rgb(${(50 * f) | 0},${(50 * f) | 0},${(50 * f) | 0})`;
+  ctx.beginPath();
+  ctx.moveTo(arrowSize, 0);
+  ctx.lineTo(-arrowSize * 0.3, -arrowSize * 0.4);
+  ctx.lineTo(-arrowSize * 0.3, arrowSize * 0.4);
+  ctx.closePath();
+  ctx.fill();
+
+  ctx.restore();
+
+  // "HOSPITAL" text with arrow
+  if (sw > 12) {
+    ctx.fillStyle = `rgb(${(40 * f) | 0},${(40 * f) | 0},${(40 * f) | 0})`;
+    ctx.font = `bold ${Math.max(5, sw * 0.14) | 0}px sans-serif`;
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText("HOSPITAL", cx, signY + signH * 0.5);
+
+    // Add medical cross symbol for authenticity
+    if (sw > 18) {
+      let crossSize = sw * 0.08;
+      ctx.fillStyle = `rgb(${(210 * f) | 0},${(40 * f) | 0},${(40 * f) | 0})`;
+      ctx.fillRect(
+        cx - crossSize * 1.5,
+        signY + signH * 0.72,
+        crossSize * 3,
+        crossSize,
+      );
+      ctx.fillRect(
+        cx - crossSize / 2,
+        signY + signH * 0.62,
+        crossSize,
+        crossSize * 3,
+      );
+    }
+  }
+}
+
+function drawCheckpointMarker(cx, sy, sw, sh, sd, fog) {
+  if (!colOk(cx, sd)) return;
+  let f = fog;
+
+  // Pulsing glow effect
+  let pulseIntensity = (Math.sin(pulse * 3) + 1) / 2;
+  let glowSize = sw * (1.2 + pulseIntensity * 0.3);
+
+  // Outer glow
+  let gradient = ctx.createRadialGradient(
+    cx,
+    sy + sh * 0.5,
+    0,
+    cx,
+    sy + sh * 0.5,
+    glowSize / 2,
+  );
+  gradient.addColorStop(0, `rgba(200, 100, 255, ${0.5 * f * pulseIntensity})`);
+  gradient.addColorStop(
+    0.5,
+    `rgba(200, 100, 255, ${0.2 * f * pulseIntensity})`,
+  );
+  gradient.addColorStop(1, `rgba(200, 100, 255, 0)`);
+  ctx.fillStyle = gradient;
+  ctx.beginPath();
+  ctx.arc(cx, sy + sh * 0.5, glowSize / 2, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Warning symbol (triangle with exclamation)
+  let triSize = sw * 0.5;
+  ctx.fillStyle = `rgb(${(255 * f) | 0},${(180 * f) | 0},${(50 * f) | 0})`;
+  ctx.beginPath();
+  ctx.moveTo(cx, sy + sh * 0.2);
+  ctx.lineTo(cx - triSize / 2, sy + sh * 0.65);
+  ctx.lineTo(cx + triSize / 2, sy + sh * 0.65);
+  ctx.closePath();
+  ctx.fill();
+
+  // Border
+  ctx.strokeStyle = `rgb(${(200 * f) | 0},${(120 * f) | 0},${(0 * f) | 0})`;
+  ctx.lineWidth = Math.max(1, sw * 0.05);
+  ctx.stroke();
+
+  // Exclamation mark
+  if (sw > 8) {
+    ctx.fillStyle = `rgb(${(40 * f) | 0},${(40 * f) | 0},${(40 * f) | 0})`;
+    ctx.fillRect(cx - sw * 0.04, sy + sh * 0.32, sw * 0.08, sh * 0.2);
+    ctx.beginPath();
+    ctx.arc(cx, sy + sh * 0.58, sw * 0.05, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  // Floating rings
+  for (let i = 0; i < 2; i++) {
+    let offset = ((pulse * 2 + i * 1.5) % 3) / 3;
+    let ringAlpha = (1 - offset) * 0.4 * f;
+    ctx.strokeStyle = `rgba(200, 100, 255, ${ringAlpha})`;
+    ctx.lineWidth = Math.max(1, sw * 0.03);
+    ctx.beginPath();
+    ctx.arc(cx, sy + sh * 0.5, sw * (0.4 + offset * 0.6), 0, Math.PI * 2);
+    ctx.stroke();
+  }
+
+  // Label
+  if (sd < 8) {
+    drawLabelAbove(cx, sy, sw, sd, fog, "⚠ CHECKPOINT");
   }
 }
 
@@ -1083,13 +1535,82 @@ function drawCar3D(sx, sy, sw, sh, sd, fog, cr, cg, cb) {
   ctx.stroke();
 }
 
+function drawMisleadingSign(cx, sy, sw, sh, sd, fog, direction) {
+  if (!colOk(cx, sd)) return;
+  let f = fog;
+
+  // Flashing effect to make it more attention-grabbing
+  let flashIntensity = (Math.sin(pulse * 8) + 1) / 2;
+
+  // Pole
+  let pw = Math.max(2, sw * 0.1),
+    ph = sh * 0.5;
+  ctx.fillStyle = `rgb(${(155 * f) | 0},${(155 * f) | 0},${(155 * f) | 0})`;
+  ctx.fillRect(cx - pw / 2, sy + sh * 0.5, pw, ph);
+
+  // Sign board (bright yellow/orange to catch attention)
+  let signW = sw * 0.8,
+    signH = sh * 0.35;
+  let signX = cx - signW / 2,
+    signY = sy + sh * 0.15;
+
+  let brightness = 0.7 + flashIntensity * 0.3;
+  ctx.fillStyle = `rgb(${(255 * f * brightness) | 0},${(200 * f * brightness) | 0},${(50 * f * brightness) | 0})`;
+  ctx.roundRect(signX, signY, signW, signH, Math.max(2, sw * 0.05));
+  ctx.fill();
+
+  // Border
+  ctx.strokeStyle = `rgb(${(200 * f) | 0},${(100 * f) | 0},${(0 * f) | 0})`;
+  ctx.lineWidth = Math.max(1, sw * 0.04);
+  ctx.roundRect(signX, signY, signW, signH, Math.max(2, sw * 0.05));
+  ctx.stroke();
+
+  // Arrow pointing in misleading direction
+  ctx.save();
+  ctx.translate(cx, signY + signH / 2);
+  ctx.rotate(direction);
+
+  let arrowSize = Math.min(signW, signH) * 0.4;
+  ctx.fillStyle = `rgb(${(50 * f) | 0},${(50 * f) | 0},${(50 * f) | 0})`;
+  ctx.beginPath();
+  ctx.moveTo(arrowSize, 0);
+  ctx.lineTo(-arrowSize * 0.3, -arrowSize * 0.4);
+  ctx.lineTo(-arrowSize * 0.3, arrowSize * 0.4);
+  ctx.closePath();
+  ctx.fill();
+
+  ctx.restore();
+
+  // "TURN HERE" text
+  if (sw > 15) {
+    ctx.fillStyle = `rgb(${(40 * f) | 0},${(40 * f) | 0},${(40 * f) | 0})`;
+    ctx.font = `bold ${Math.max(5, sw * 0.12) | 0}px sans-serif`;
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText("TURN", cx, signY + signH * 0.3);
+    ctx.fillText("HERE", cx, signY + signH * 0.7);
+  }
+}
+
 // ================================================================
 //  HUD UPDATE (A -> B only)
 // ================================================================
 function updateHUD() {
+  // Update state tag
+  let hudTag = document.getElementById("hud-tag");
+  if (manicMode) {
+    hudTag.textContent = "⚡ MANIC EPISODE · HEIGHTENED STATE";
+    hudTag.style.color = "#ff4444";
+    hudTag.style.animation = "pulse 0.5s infinite";
+  } else {
+    hudTag.textContent = "🌿 EUTHYMIA · BASE LEVEL";
+    hudTag.style.color = "";
+    hudTag.style.animation = "";
+  }
+
   let spd = Math.abs(P.spd);
-  document.getElementById("spd-bar").style.width =
-    (spd / MOVE_SPEED) * 100 + "%";
+  let maxSpeed = manicMode ? MOVE_SPEED * MANIC_SPEED_MULTIPLIER : MOVE_SPEED;
+  document.getElementById("spd-bar").style.width = (spd / maxSpeed) * 100 + "%";
   document.getElementById("spd-label").textContent =
     spd.toFixed(1) + " t/s  " + (P.spd >= 0 ? "▲ FWD" : "▼ REV");
 
@@ -1202,6 +1723,26 @@ function updateMinimap() {
   if (!mmBase) buildMinimapBase();
   mmCtx.clearRect(0, 0, mmCanvas.width, mmCanvas.height);
   mmCtx.drawImage(mmBase, 0, 0);
+
+  // Draw checkpoint zone if not yet triggered
+  if (!hasPassedCheckpoint) {
+    let cpx = MANIC_CHECKPOINT_ZONE.x * MM_S;
+    let cpy = MANIC_CHECKPOINT_ZONE.y * MM_S;
+    let cpr = MANIC_CHECKPOINT_ZONE.radius * MM_S;
+
+    // Pulsing checkpoint indicator
+    let pulseAlpha = Math.sin(pulse * 3) * 0.3 + 0.5;
+    mmCtx.fillStyle = `rgba(200, 100, 255, ${pulseAlpha * 0.3})`;
+    mmCtx.beginPath();
+    mmCtx.arc(cpx, cpy, cpr, 0, Math.PI * 2);
+    mmCtx.fill();
+
+    mmCtx.strokeStyle = `rgba(200, 100, 255, ${pulseAlpha})`;
+    mmCtx.lineWidth = 2;
+    mmCtx.beginPath();
+    mmCtx.arc(cpx, cpy, cpr, 0, Math.PI * 2);
+    mmCtx.stroke();
+  }
 
   NPCS.forEach((n) => {
     mmCtx.fillStyle = `rgb(${n.r},${n.g},${n.b})`;
