@@ -3,21 +3,27 @@
   <head>
     <meta charset="utf-8" />
     <title>Crossy Mind</title>
+
     <style>
-      html,
-      body {
+      * {
         margin: 0;
         padding: 0;
+        box-sizing: border-box;
+      }
+      body {
+        background: #000;
         overflow: hidden;
-        background: #d4f5e2;
       }
       canvas {
         display: block;
       }
     </style>
-  </head>
-  <body>
+
+    <!-- Load p5.js -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.9.4/p5.min.js"></script>
-    <script src="sketch.js"></script>
-  </body>
+
+    <!-- Load your sketch -->
+    <script src="sketch.js" defer></script>
+  </head>
+  <body></body>
 </html>

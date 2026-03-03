@@ -1,126 +1,54 @@
 // ============================================================
-//  CROSSY MIND — Base Level (Euthymia)
-//  p5.js sketch
+//  CROSSY MIND — Euthymia Base Level  (First-Person Raycaster)
+//  sketch.js (for use with index.html that loads p5.js + this file)
 // ============================================================
 
-// ── Constants ───────────────────────────────────────────────
-const ROWS = 40;
-const COLS = 40;
-const TILE = 48; // px per tile in world space
-const MAX_SPEED = 5.5; // tiles per second
-const ACCEL = 30;
-const FRICTION = 0.9;
-const GOAL_RADIUS = 1.5; // tiles
+const ROWS = 40,
+  COLS = 40;
+const MOVE_SPEED = 7.8;
+const TURN_SPEED = 2.2;
+const FRICTION = 0.95;
+const GOAL_RADIUS = 1.2;
 
-// ── Map tile values ──────────────────────────────────────────
-// 0 = grass   1 = road   2 = sidewalk   3 = crosswalk
+const GOAL_A = { x: 4.5, y: 4.5, label: "Community Centre" };
+const GOAL_B = { x: 35.5, y: 35.5, label: "Hospital" };
+
 let MAP = [];
-
-// ── Goals ───────────────────────────────────────────────────
-const GOAL_A = { x: 4.5, y: 4.5, label: "Community Centre", emoji: "🏫" };
-const GOAL_B = { x: 35.5, y: 35.5, label: "Hospital", emoji: "🏥" };
-
-// ── Palette ─────────────────────────────────────────────────
-const PAL = {
-  grassA: "#7ec8a0",
-  grassB: "#6db88e",
-  road: "#8b8b9e",
-  roadLine: "#fff176",
-  sidewalk: "#f0d9b5",
-  crosswalk: "#7a7a8e",
-  wheel: "#333333",
-};
-
-// ── NPC cars (vx/vy in tiles/sec) ───────────────────────────
-let npcs = [];
-const NPC_TEMPLATE = [
-  { x: 6, y: 3.5, vx: 2.2, vy: 0, col: "#ffb3ba" },
-  { x: 30, y: 10.5, vx: -1.9, vy: 0, col: "#b5ead7" },
-  { x: 18.5, y: 7, vx: 0, vy: 1.6, col: "#ffdac1" },
-  { x: 26.5, y: 22, vx: 0, vy: -2.0, col: "#c7ceea" },
-  { x: 9, y: 26.5, vx: 2.5, vy: 0, col: "#fffacd" },
-  { x: 34.5, y: 31, vx: 0, vy: 1.4, col: "#b5d5ff" },
-];
-
-// ── Road signs ───────────────────────────────────────────────
-const SIGNS = [
-  { x: 2.3, y: 2.3, text: "STOP", shape: "oct", bg: "#ff6b6b" },
-  { x: 9.3, y: 2.3, text: "YIELD", shape: "tri", bg: "#ffa94d" },
-  { x: 17.3, y: 9.3, text: "STOP", shape: "oct", bg: "#ff6b6b" },
-  { x: 25.3, y: 17.3, text: "->", shape: "rect", bg: "#69db7c" },
-  { x: 33.3, y: 25.3, text: "STOP", shape: "oct", bg: "#ff6b6b" },
-  { x: 2.3, y: 33.3, text: "YIELD", shape: "tri", bg: "#ffa94d" },
-  { x: 9.3, y: 33.3, text: "^", shape: "rect", bg: "#69db7c" },
-];
-
-// ── Decorative flowers (pre-generated, fixed positions) ──────
-let flowers = [];
-
-// ── Player state ─────────────────────────────────────────────
-let player = {};
-
-// ── Game state ───────────────────────────────────────────────
-// "intro" | "playing" | "win"
-let screen = "intro";
-let phase = "toB"; // "toB" or "toA"
-let pulse = 0; // time accumulator for animations
-
-// ── Mini-map graphics buffer ─────────────────────────────────
+let player;
+let gameScreen = "intro";
+let phase = "toB";
+let pulse = 0;
 let mmGfx;
-const MM_SCALE = 3; // px per tile in mini-map
+const MM = 3;
 
-// ── Button bounds (for click detection) ──────────────────────
+// buttons (must be global because mousePressed uses them)
 let startBtn = {};
 let playAgainBtn = {};
 
-// ── CAMERA (NEW: global + smooth follow + clamp) ─────────────
-let camX = 0;
-let camY = 0;
-const CAM_SMOOTH = 0.12; // set to 1 for instant snap, or 0.08 for softer
-
-// ============================================================
-//  p5 SETUP
-// ============================================================
-function setup() {
-  createCanvas(windowWidth, windowHeight);
-  textFont("sans-serif");
-  buildMap();
-  buildFlowers();
-  resetGame();
-  buildMinimap();
-}
-
-function windowResized() {
-  resizeCanvas(windowWidth, windowHeight);
-}
-
-// ============================================================
-//  MAP BUILDER
-// ============================================================
+// ── Build map ────────────────────────────────────────────────
 function buildMap() {
   MAP = [];
-  for (let r = 0; r < ROWS; r++) MAP.push(new Array(COLS).fill(0));
+  for (let r = 0; r < ROWS; r++) MAP.push(new Array(COLS).fill(1));
 
-  // Lay horizontal 2-lane roads
+  // Carve open road lanes
   [3, 10, 18, 26, 34].forEach((r) => {
     for (let c = 0; c < COLS; c++) {
-      MAP[r][c] = 1;
-      MAP[r + 1][c] = 1;
+      MAP[r][c] = 0;
+      if (r + 1 < ROWS) MAP[r + 1][c] = 0;
     }
   });
-  // Lay vertical 2-lane roads
   [3, 10, 18, 26, 34].forEach((c) => {
     for (let r = 0; r < ROWS; r++) {
-      MAP[r][c] = 1;
-      MAP[r][c + 1] = 1;
+      MAP[r][c] = 0;
+      if (c + 1 < COLS) MAP[r][c + 1] = 0;
     }
   });
 
-  // Sidewalks: grass tiles adjacent to road
+  // Sidewalk border (type 2) around open tiles
   let sw = new Set();
-  for (let r = 0; r < ROWS; r++) {
+  for (let r = 0; r < ROWS; r++)
     for (let c = 0; c < COLS; c++) {
-      if (MAP[r][c] === 1) {
+      if (MAP[r][c] === 0) {
         [
           [-1, 0],
           [1, 0],
@@ -129,94 +57,65 @@ function buildMap() {
         ].forEach(([dr, dc]) => {
           let nr = r + dr,
             nc = c + dc;
-          if (nr >= 0 && nr < ROWS && nc >= 0 && nc < COLS && MAP[nr][nc] === 0)
-            sw.add(`${nr},${nc}`);
+          if (nr >= 0 && nr < ROWS && nc >= 0 && nc < COLS && MAP[nr][nc] === 1)
+            sw.add(nr + "," + nc);
         });
       }
     }
-  }
   sw.forEach((k) => {
     let [r, c] = k.split(",").map(Number);
     MAP[r][c] = 2;
   });
-
-  // Crosswalks at intersections
-  let inter = [3, 4, 10, 11, 18, 19, 26, 27, 34, 35];
-  inter.forEach((r) =>
-    inter.forEach((c) => {
-      if (MAP[r][c] === 1) MAP[r][c] = 3;
-    }),
-  );
 }
 
-function buildFlowers() {
-  flowers = [];
-  for (let r = 0; r < ROWS; r++) {
-    for (let c = 0; c < COLS; c++) {
-      if (MAP[r][c] === 0) {
-        let h = r * 7 + c * 13;
-        if (h % 17 === 0) flowers.push({ r, c, ox: 4, oy: 14, e: "🌸" });
-        else if (h % 19 === 0) flowers.push({ r, c, ox: 26, oy: 36, e: "🌼" });
-        else if ((r * 3 + c * 17) % 23 === 0)
-          flowers.push({ r, c, ox: 14, oy: 26, e: "🌿" });
-      }
-    }
-  }
+function isSolid(x, y) {
+  let c = Math.floor(x),
+    r = Math.floor(y);
+  if (c < 0 || c >= COLS || r < 0 || r >= ROWS) return true;
+  return MAP[r][c] !== 0;
 }
 
 function buildMinimap() {
-  mmGfx = createGraphics(COLS * MM_SCALE, ROWS * MM_SCALE);
+  mmGfx = createGraphics(COLS * MM, ROWS * MM);
   mmGfx.noStroke();
-  for (let r = 0; r < ROWS; r++) {
+  for (let r = 0; r < ROWS; r++)
     for (let c = 0; c < COLS; c++) {
       let t = MAP[r][c];
-      mmGfx.fill(
-        t === 1
-          ? "#b0b0c0"
-          : t === 2
-            ? "#e8d5b0"
-            : t === 3
-              ? "#9090a0"
-              : "#7ec8a0",
-      );
-      mmGfx.rect(c * MM_SCALE, r * MM_SCALE, MM_SCALE, MM_SCALE);
+      mmGfx.fill(t === 0 ? "#888" : t === 2 ? "#c4a882" : "#4a7c59");
+      mmGfx.rect(c * MM, r * MM, MM, MM);
     }
-  }
-  // Goal A
   mmGfx.fill("#69db7c");
-  mmGfx.circle(GOAL_A.x * MM_SCALE, GOAL_A.y * MM_SCALE, 10);
-  // Goal B
+  mmGfx.circle(GOAL_A.x * MM, GOAL_A.y * MM, 7);
   mmGfx.fill("#ff8fab");
-  mmGfx.circle(GOAL_B.x * MM_SCALE, GOAL_B.y * MM_SCALE, 10);
+  mmGfx.circle(GOAL_B.x * MM, GOAL_B.y * MM, 7);
 }
 
 function resetGame() {
-  player = { x: GOAL_A.x, y: GOAL_A.y, vx: 0, vy: 0, angle: 0 };
-  npcs = NPC_TEMPLATE.map((n) => ({ ...n }));
+  player = { x: GOAL_A.x, y: GOAL_A.y, angle: -0.5, speed: 0 };
   phase = "toB";
   pulse = 0;
-
-  // reset camera too (so it starts clean)
-  camX = 0;
-  camY = 0;
 }
 
-function isDriveable(tx, ty) {
-  let r = floor(ty),
-    c = floor(tx);
-  if (r < 0 || r >= ROWS || c < 0 || c >= COLS) return false;
-  return MAP[r][c] === 1 || MAP[r][c] === 3;
+// ── p5 setup ─────────────────────────────────────────────────
+function setup() {
+  createCanvas(windowWidth, windowHeight);
+  pixelDensity(1);
+  buildMap();
+  buildMinimap();
+  resetGame();
 }
 
-// ============================================================
-//  p5 DRAW  (main loop)
-// ============================================================
+function windowResized() {
+  resizeCanvas(windowWidth, windowHeight);
+}
+
+// ── Main draw loop ────────────────────────────────────────────
 function draw() {
-  if (screen === "intro") {
+  if (gameScreen === "intro") {
     drawIntro();
     return;
   }
-  if (screen === "win") {
+  if (gameScreen === "win") {
     drawWin();
     return;
   }
@@ -225,728 +124,508 @@ function draw() {
   pulse += dt;
 
   updatePlayer(dt);
-  updateNPCs(dt);
   checkGoal();
 
-  // ==========================================================
-  // CAMERA FOLLOW (NEW)
-  // - targets player center
-  // - clamps to map edges (no empty space)
-  // - smooth follow via lerp
-  // ==========================================================
-  const worldW = COLS * TILE;
-  const worldH = ROWS * TILE;
-
-  let targetCamX = player.x * TILE - width / 2;
-  let targetCamY = player.y * TILE - height / 2;
-
-  targetCamX = constrain(targetCamX, 0, max(0, worldW - width));
-  targetCamY = constrain(targetCamY, 0, max(0, worldH - height));
-
-  camX = lerp(camX, targetCamX, CAM_SMOOTH);
-  camY = lerp(camY, targetCamY, CAM_SMOOTH);
-
-  drawWorld(camX, camY);
+  drawSkyFloor();
+  castRays();
+  drawCompass();
   drawHUD();
   drawMinimap();
 }
 
-// ============================================================
-//  UPDATE
-// ============================================================
+// ── Player update ─────────────────────────────────────────────
 function updatePlayer(dt) {
-  let ax = 0,
-    ay = 0;
-  if (keyIsDown(UP_ARROW)) ay = -ACCEL;
-  if (keyIsDown(DOWN_ARROW)) ay = ACCEL;
-  if (keyIsDown(LEFT_ARROW)) ax = -ACCEL;
-  if (keyIsDown(RIGHT_ARROW)) ax = ACCEL;
+  if (keyIsDown(LEFT_ARROW) || keyIsDown(65)) player.angle -= TURN_SPEED * dt;
+  if (keyIsDown(RIGHT_ARROW) || keyIsDown(68)) player.angle += TURN_SPEED * dt;
 
-  let fric = pow(FRICTION, dt * 60);
-  player.vx = (player.vx + ax * dt) * fric;
-  player.vy = (player.vy + ay * dt) * fric;
+  let accel = 0;
+  if (keyIsDown(UP_ARROW) || keyIsDown(87)) accel = MOVE_SPEED;
+  if (keyIsDown(DOWN_ARROW) || keyIsDown(83)) accel = -MOVE_SPEED * 0.55;
 
-  // Clamp to max speed
-  let spd = sqrt(player.vx * player.vx + player.vy * player.vy);
-  if (spd > MAX_SPEED) {
-    player.vx = (player.vx / spd) * MAX_SPEED;
-    player.vy = (player.vy / spd) * MAX_SPEED;
-  }
-  if (abs(player.vx) < 0.02) player.vx = 0;
-  if (abs(player.vy) < 0.02) player.vy = 0;
+  player.speed = (player.speed + accel * dt) * pow(FRICTION, dt * 60);
+  if (abs(player.speed) < 0.005) player.speed = 0;
+  player.speed = constrain(player.speed, -MOVE_SPEED * 0.55, MOVE_SPEED);
 
-  // Visual angle follows velocity
-  if (spd > 0.15) player.angle = atan2(player.vx, -player.vy);
+  let dx = cos(player.angle) * player.speed * dt;
+  let dy = sin(player.angle) * player.speed * dt;
+  let m = 0.22;
 
-  // Move with road collision
-  let nx = player.x + player.vx * dt;
-  let ny = player.y + player.vy * dt;
-  if (isDriveable(nx, player.y)) player.x = nx;
-  else player.vx *= -0.2;
-  if (isDriveable(player.x, ny)) player.y = ny;
-  else player.vy *= -0.2;
-  player.x = constrain(player.x, 0.5, COLS - 1.5);
-  player.y = constrain(player.y, 0.5, ROWS - 1.5);
-}
+  if (!isSolid(player.x + dx + (dx >= 0 ? m : -m), player.y)) player.x += dx;
+  if (!isSolid(player.x, player.y + dy + (dy >= 0 ? m : -m))) player.y += dy;
 
-function updateNPCs(dt) {
-  npcs.forEach((n) => {
-    let nx = n.x + n.vx * dt;
-    let ny = n.y + n.vy * dt;
-    if (isDriveable(nx, n.y)) n.x = nx;
-    else n.vx *= -1;
-    if (isDriveable(n.x, ny)) n.y = ny;
-    else n.vy *= -1;
-    n.x = constrain(n.x, 0.5, COLS - 1.5);
-    n.y = constrain(n.y, 0.5, ROWS - 1.5);
-  });
+  player.x = constrain(player.x, 0.5, COLS - 0.5);
+  player.y = constrain(player.y, 0.5, ROWS - 0.5);
 }
 
 function checkGoal() {
-  let target = phase === "toB" ? GOAL_B : GOAL_A;
-  let d = dist(player.x, player.y, target.x, target.y);
-  if (d < GOAL_RADIUS) {
+  let t = phase === "toB" ? GOAL_B : GOAL_A;
+  if (dist(player.x, player.y, t.x, t.y) < GOAL_RADIUS) {
     if (phase === "toB") phase = "toA";
-    else screen = "win";
+    else gameScreen = "win";
   }
 }
 
-// ============================================================
-//  DRAW WORLD
-// ============================================================
-function drawWorld(camX, camY) {
-  // IMPORTANT: grass background instead of mint so edges never look "empty"
-  background(PAL.grassA);
+// ── Sky + floor ───────────────────────────────────────────────
+function drawSkyFloor() {
+  let h2 = height / 2;
 
-  // robust viewport bounds (draw enough tiles to cover screen)
-  let c0 = floor(camX / TILE) - 2;
-  let c1 = floor((camX + width) / TILE) + 2;
-  let r0 = floor(camY / TILE) - 2;
-  let r1 = floor((camY + height) / TILE) + 2;
+  // Sky gradient
+  for (let y = 0; y < h2; y++) {
+    let t = y / h2;
+    stroke(lerp(135, 180, t), lerp(206, 225, t), lerp(250, 255, t));
+    line(0, y, width, y);
+  }
 
-  c0 = constrain(c0, 0, COLS - 1);
-  c1 = constrain(c1, 0, COLS - 1);
-  r0 = constrain(r0, 0, ROWS - 1);
-  r1 = constrain(r1, 0, ROWS - 1);
+  // Floor gradient
+  for (let y = h2; y < height; y++) {
+    let t = (y - h2) / (height - h2);
+    stroke(lerp(120, 75, t), lerp(110, 70, t), lerp(100, 65, t));
+    line(0, y, width, y);
+  }
 
   noStroke();
+}
 
-  // ── Tiles ──
-  for (let r = r0; r <= r1; r++) {
-    for (let c = c0; c <= c1; c++) {
-      let wx = c * TILE - camX;
-      let wy = r * TILE - camY;
-      let t = MAP[r][c];
+// ── Raycaster (DDA) ───────────────────────────────────────────
+function castRays() {
+  let fov = PI / 3;
+  let horizon = height / 2;
+  let numRays = width;
 
-      if (t === 0) {
-        fill((r + c) % 2 === 0 ? PAL.grassA : PAL.grassB);
-        rect(wx, wy, TILE, TILE);
-      } else if (t === 1) {
-        fill(PAL.road);
-        rect(wx, wy, TILE, TILE);
+  for (let col = 0; col < numRays; col++) {
+    let rayA = player.angle - fov / 2 + (col / numRays) * fov;
+    let rdx = cos(rayA),
+      rdy = sin(rayA);
 
-        let inter = [3, 4, 10, 11, 18, 19, 26, 27, 34, 35];
-        let hr = inter.includes(r),
-          vr = inter.includes(c);
+    let mc = Math.floor(player.x),
+      mr = Math.floor(player.y);
+    let ddx = abs(rdx) < 1e-10 ? 1e30 : abs(1 / rdx);
+    let ddy = abs(rdy) < 1e-10 ? 1e30 : abs(1 / rdy);
 
-        fill(PAL.roadLine);
-        if (hr && !vr) rect(wx + 4, wy + TILE / 2 - 2, TILE - 8, 4);
-        else if (vr && !hr) rect(wx + TILE / 2 - 2, wy + 4, 4, TILE - 8);
-      } else if (t === 2) {
-        fill(PAL.sidewalk);
-        rect(wx, wy, TILE, TILE);
-        fill(0, 0, 0, 13);
-        for (let b = 0; b < 3; b++) {
-          let oo = b % 2 === 0 ? 0 : TILE / 4;
-          rect(wx + oo, wy + b * (TILE / 3), TILE / 2 - 1, TILE / 3 - 1);
-          rect(
-            wx + oo + TILE / 2,
-            wy + b * (TILE / 3),
-            TILE / 2 - 1,
-            TILE / 3 - 1,
-          );
-        }
-      } else if (t === 3) {
-        fill(PAL.crosswalk);
-        rect(wx, wy, TILE, TILE);
-        fill(255, 255, 255, 110);
-        for (let s = 0; s < 4; s++)
-          rect(wx + s * (TILE / 4) + 2, wy, (TILE / 4) * 0.6, TILE);
+    let sc, sr, sdx, sdy;
+    if (rdx < 0) {
+      sc = -1;
+      sdx = (player.x - mc) * ddx;
+    } else {
+      sc = 1;
+      sdx = (mc + 1 - player.x) * ddx;
+    }
+    if (rdy < 0) {
+      sr = -1;
+      sdy = (player.y - mr) * ddy;
+    } else {
+      sr = 1;
+      sdy = (mr + 1 - player.y) * ddy;
+    }
+
+    let hit = false,
+      ns = false,
+      ttype = 1,
+      safe = 0;
+    while (!hit && safe++ < 100) {
+      if (sdx < sdy) {
+        sdx += ddx;
+        mc += sc;
+        ns = false;
+      } else {
+        sdy += ddy;
+        mr += sr;
+        ns = true;
+      }
+
+      if (mc < 0 || mc >= COLS || mr < 0 || mr >= ROWS) {
+        hit = true;
+        break;
+      }
+      if (MAP[mr][mc] !== 0) {
+        hit = true;
+        ttype = MAP[mr][mc];
       }
     }
-  }
 
-  // ── Flowers ──
-  textSize(11);
-  textAlign(LEFT, TOP);
-  flowers.forEach((f) => {
-    let wx = f.c * TILE - camX + f.ox;
-    let wy = f.r * TILE - camY + f.oy;
-    if (wx > -20 && wx < width + 20 && wy > -20 && wy < height + 20)
-      text(f.e, wx, wy);
-  });
+    let pd = ns
+      ? (mr - player.y + (1 - sr) / 2) / rdy
+      : (mc - player.x + (1 - sc) / 2) / rdx;
+    pd = max(pd, 0.01);
 
-  // ── Goal markers ──
-  drawGoalMarker(
-    GOAL_A.x,
-    GOAL_A.y,
-    GOAL_A.emoji,
-    GOAL_A.label,
-    color("#69db7c"),
-    camX,
-    camY,
-    phase !== "toB",
-  );
-  drawGoalMarker(
-    GOAL_B.x,
-    GOAL_B.y,
-    GOAL_B.emoji,
-    GOAL_B.label,
-    color("#ff8fab"),
-    camX,
-    camY,
-    phase === "toB",
-  );
+    let wallH = Math.floor(height / pd);
+    let fog = constrain(1 - pd / 18, 0.05, 1.0);
+    let dim = ns ? 0.72 : 1.0;
 
-  // ── Signs ──
-  SIGNS.forEach((s) => drawSign(s, camX, camY));
-
-  // ── NPC cars ──
-  npcs.forEach((n) => {
-    let ang = n.vx > 0 ? HALF_PI : n.vx < 0 ? -HALF_PI : n.vy > 0 ? PI : 0;
-    drawCar(n.x, n.y, ang, color(n.col), camX, camY, false);
-  });
-
-  // ── Player ──
-  drawCar(player.x, player.y, player.angle, color("#ffb3c6"), camX, camY, true);
-}
-
-// ============================================================
-//  DRAW CAR
-// ============================================================
-function drawCar(wx, wy, angle, col, camX, camY, isPlayer) {
-  let sx = wx * TILE - camX;
-  let sy = wy * TILE - camY;
-  if (sx < -80 || sx > width + 80 || sy < -80 || sy > height + 80) return;
-
-  push();
-  translate(sx, sy);
-  rotate(angle);
-
-  let bw = 20,
-    bh = 32;
-
-  // Shadow
-  noStroke();
-  fill(0, 0, 0, 46);
-  ellipse(1, 3, bw * 1.0, bh * 0.7);
-
-  // Body
-  noStroke();
-  fill(col);
-  roundedRect(-bw / 2, -bh / 2, bw, bh, 6);
-
-  // Shine
-  fill(255, 255, 255, 90);
-  roundedRect(-bw * 0.3, -bh * 0.45, bw * 0.55, bh * 0.18, 3);
-
-  // Roof
-  fill(isPlayer ? color("#ffeef8") : lerpColor(col, color(255), 0.5));
-  roundedRect(-bw * 0.36, -bh * 0.26, bw * 0.72, bh * 0.36, 4);
-
-  // Windshield
-  fill(180, 240, 255, 204);
-  roundedRect(-bw * 0.28, -bh * 0.24, bw * 0.56, bh * 0.15, 2);
-
-  // Headlights
-  fill("#fffde7");
-  ellipse(-bw * 0.28, -bh / 2 + 3, 6, 5);
-  ellipse(bw * 0.28, -bh / 2 + 3, 6, 5);
-
-  // Tail lights
-  fill("#ff6b9d");
-  ellipse(-bw * 0.28, bh / 2 - 3, 6, 4);
-  ellipse(bw * 0.28, bh / 2 - 3, 6, 4);
-
-  // Wheels
-  let wpos = [
-    [-bw / 2 - 2, -bh * 0.25],
-    [bw / 2 + 2, -bh * 0.25],
-    [-bw / 2 - 2, bh * 0.25],
-    [bw / 2 + 2, bh * 0.25],
-  ];
-  wpos.forEach(([wx2, wy2]) => {
-    fill(PAL.wheel);
-    ellipse(wx2, wy2, 7, 10);
-    fill("#888");
-    ellipse(wx2, wy2, 3.6, 3.6);
-  });
-
-  // Player star
-  if (isPlayer) {
-    textSize(9);
-    textAlign(CENTER, BOTTOM);
-    text("⭐", 0, -bh / 2 - 4);
-  }
-
-  pop();
-}
-
-// ============================================================
-//  DRAW SIGN
-// ============================================================
-function drawSign(sign, camX, camY) {
-  let sx = sign.x * TILE - camX;
-  let sy = sign.y * TILE - camY;
-  if (sx < -60 || sx > width + 60 || sy < -60 || sy > height + 60) return;
-
-  // Post
-  fill("#aaaaaa");
-  noStroke();
-  rect(sx + 9, sy + 18, 3, 20);
-
-  push();
-  translate(sx + 10, sy + 10);
-
-  if (sign.shape === "oct") {
-    fill(sign.bg);
-    stroke("#fff");
-    strokeWeight(2);
-    beginShape();
-    for (let i = 0; i < 8; i++) {
-      let a = (i * TWO_PI) / 8 - PI / 8;
-      vertex(9 * cos(a), 9 * sin(a));
+    let r, g, b;
+    if (ttype === 1) {
+      r = 126;
+      g = 190;
+      b = 140;
+    } // grass
+    else if (ttype === 2) {
+      r = 210;
+      g = 185;
+      b = 145;
+    } // sidewalk
+    else {
+      r = 190;
+      g = 130;
+      b = 100;
     }
-    endShape(CLOSE);
-    noStroke();
-    fill("#fff");
-    textSize(6);
-    textAlign(CENTER, CENTER);
-    text(sign.text, 0, 0);
-  } else if (sign.shape === "tri") {
-    fill(sign.bg);
-    stroke("#fff");
-    strokeWeight(2);
-    triangle(0, -9, 10, 8, -10, 8);
-    noStroke();
-    fill("#000");
-    textSize(5);
-    textAlign(CENTER, CENTER);
-    text(sign.text, 0, 5);
-  } else {
-    fill(sign.bg);
-    stroke("#fff");
-    strokeWeight(1);
-    roundedRect(-12, -7, 24, 14, 3);
-    noStroke();
-    fill("#fff");
-    textSize(7);
-    textAlign(CENTER, CENTER);
-    text(sign.text, 0, 1);
+
+    r = r * dim * fog;
+    g = g * dim * fog;
+    b = b * dim * fog;
+
+    let top = Math.floor(horizon - wallH / 2);
+    let bottom = Math.floor(horizon + wallH / 2);
+
+    stroke(r, g, b);
+    line(col, max(top, 0), col, min(bottom, height));
   }
 
-  pop();
+  noStroke();
 }
 
-// ============================================================
-//  DRAW GOAL MARKER
-// ============================================================
-function drawGoalMarker(gx, gy, emoji, label, col, camX, camY, isCurrent) {
-  let sx = gx * TILE - camX;
-  let sy = gy * TILE - camY;
-  if (sx < -100 || sx > width + 100 || sy < -100 || sy > height + 100) return;
+// ── Compass arrow toward goal ─────────────────────────────────
+function drawCompass() {
+  let target = phase === "toB" ? GOAL_B : GOAL_A;
+  let col = phase === "toB" ? color(255, 139, 171) : color(105, 219, 124);
+  let dx = target.x - player.x,
+    dy = target.y - player.y;
+  let rel = atan2(dy, dx) - player.angle;
+  while (rel > PI) rel -= TWO_PI;
+  while (rel < -PI) rel += TWO_PI;
+  let d = dist(player.x, player.y, target.x, target.y);
 
-  let sc = isCurrent ? 1 + 0.08 * sin(pulse * 5) : 1;
-  let r = GOAL_RADIUS * TILE * sc;
-
-  // Pulsing glow
+  let cx = width / 2,
+    cy = 50;
+  fill(0, 0, 0, 130);
   noStroke();
-  fill(
-    red(col),
-    green(col),
-    blue(col),
-    isCurrent ? 46 + 26 * sin(pulse * 5) : 26,
-  );
-  circle(sx, sy, r * 2);
+  rect(cx - 80, cy - 34, 160, 50, 12);
 
-  // Dashed ring
-  if (isCurrent) {
-    noFill();
-    stroke(col);
-    strokeWeight(2.5);
-    drawingContext.setLineDash([6, 5]);
-    circle(sx, sy, r * 2);
-    drawingContext.setLineDash([]);
-  }
-
-  // Flag pole
-  noStroke();
-  fill("#bbbbbb");
-  rect(sx - 1.5, sy - 50, 3, 50);
-
-  // Flag
+  push();
+  translate(cx, cy);
+  rotate(rel);
   fill(col);
-  triangle(sx + 1.5, sy - 50, sx + 20, sy - 42, sx + 1.5, sy - 34);
-
-  // Emoji + label
-  textSize(18);
-  textAlign(CENTER, BOTTOM);
-  text(emoji, sx, sy - 50);
-
-  textSize(10);
-  stroke(0, 0, 0, 100);
-  strokeWeight(3);
-  fill(255);
-  text(label, sx, sy - 58);
   noStroke();
+  triangle(0, -24, -9, 10, 9, 10);
+  fill(0, 0, 0, 100);
+  circle(0, 0, 11);
+  pop();
+
+  fill(255);
+  textSize(10);
+  textStyle(BOLD);
+  textAlign(CENTER, TOP);
+  text(target.label.toUpperCase(), cx, cy + 14);
+  fill(180);
+  textStyle(NORMAL);
+  textSize(9);
+  text(nf(d, 1, 1) + " units", cx, cy + 26);
 }
 
-// ============================================================
-//  HUD  (screen-space)
-// ============================================================
+// ── HUD (bottom-left) ─────────────────────────────────────────
 function drawHUD() {
   let isToB = phase === "toB";
   let dest = isToB ? GOAL_B : GOAL_A;
-  let spd = sqrt(player.vx ** 2 + player.vy ** 2);
-
+  let spd = abs(player.speed);
   let x = 14,
-    y = 14,
-    w = 190,
-    h = 110;
+    y = height - 120,
+    w = 200,
+    h = 108;
 
-  drawPanel(x, y, w, h);
-
-  fill("#c084fc");
+  fill(0, 0, 0, 160);
   noStroke();
-  textSize(10);
+  rect(x, y, w, h, 16);
+  stroke(isToB ? color("#ff8fab") : color("#69db7c"));
+  strokeWeight(1.5);
+  rect(x, y, w, h, 16);
+  noStroke();
+
+  fill(192, 132, 252);
+  textSize(9);
   textStyle(BOLD);
   textAlign(LEFT, TOP);
-  text("🌿 EUTHYMIA", x + 12, y + 12);
+  text("🌿 EUTHYMIA · BASE LEVEL", x + 10, y + 10);
 
-  let bx = x + 38,
-    by = y + 32,
-    bw2 = w - 54,
-    bh2 = 7;
-  fill("#f3e8ff");
-  noStroke();
-  rect(bx, by, bw2, bh2, 4);
-
-  let pct = min(1, spd / MAX_SPEED);
-  if (pct > 0) {
-    fill("#c084fc");
-    rect(bx, by, bw2 * pct, bh2, 4);
-    fill(244, 114, 182, 180);
-    rect(bx + bw2 * pct * 0.5, by, bw2 * pct * 0.5, bh2, 0, 4, 4, 0);
+  // Speed bar
+  fill(50, 50, 70);
+  rect(x + 10, y + 26, w - 20, 6, 3);
+  if (spd > 0) {
+    fill(192, 132, 252);
+    rect(x + 10, y + 26, (w - 20) * min(1, spd / MOVE_SPEED), 6, 3);
   }
-  fill("#aaaaaa");
-  textSize(9);
+  fill(160);
+  textSize(8);
   textStyle(NORMAL);
-  textAlign(LEFT, TOP);
-  text(nf(spd, 1, 1) + " t/s", bx, by + 10);
-
-  textSize(17);
-  textAlign(LEFT, TOP);
-  text("🚗", x + 12, y + 28);
-
-  let gx = x + 8,
-    gy = y + 58,
-    gw = w - 16,
-    gh = 44;
-  fill(isToB ? color(255, 240, 246) : color(240, 255, 244));
-  stroke(isToB ? color("#ffb3c6") : color("#b2f5c8"));
-  strokeWeight(2);
-  rect(gx, gy, gw, gh, 10);
-
-  noStroke();
-  fill("#cccccc");
-  textSize(9);
-  textStyle(BOLD);
-  textAlign(LEFT, TOP);
-  text(isToB ? "STEP 1 OF 2" : "STEP 2 OF 2", gx + 8, gy + 7);
-
-  textSize(18);
-  text(dest.emoji, gx + 8, gy + 18);
-
-  fill(isToB ? color("#e91e8c") : color("#16a34a"));
-  textSize(11);
-  textStyle(BOLD);
-  text(dest.label, gx + 32, gy + 18);
-
-  fill("#aaaaaa");
-  textStyle(NORMAL);
-  textSize(9);
   text(
-    isToB ? "Drive to the hospital" : "Return to community centre",
-    gx + 32,
-    gy + 32,
+    nf(spd, 1, 1) + " t/s  |  " + (player.speed >= 0 ? "FWD" : "REV"),
+    x + 10,
+    y + 36,
   );
+
+  fill(isToB ? color("#ff8fab") : color("#69db7c"));
+  textSize(9);
+  textStyle(BOLD);
+  text(
+    isToB ? "STEP 1/2 — DRIVE TO:" : "STEP 2/2 — RETURN TO:",
+    x + 10,
+    y + 52,
+  );
+  fill(255);
+  textSize(12);
+  textStyle(BOLD);
+  text(dest.label, x + 10, y + 65);
+  fill(150);
+  textStyle(NORMAL);
+  textSize(9);
+  text("↑↓ drive  ·  ←→ turn", x + 10, y + 84);
 }
 
-// ============================================================
-//  MINI-MAP
-// ============================================================
+// ── Mini-map (bottom-right) ───────────────────────────────────
 function drawMinimap() {
-  let mmW = COLS * MM_SCALE;
-  let mmH = ROWS * MM_SCALE;
-  let mx = width - mmW - 16;
-  let my = height - mmH - 16;
+  let mmW = COLS * MM,
+    mmH = ROWS * MM;
+  let mx = width - mmW - 14,
+    my = height - mmH - 14;
 
-  drawPanel(mx - 10, my - 22, mmW + 20, mmH + 32);
-
-  fill("#c084fc");
-  textSize(9);
-  textStyle(BOLD);
-  textAlign(CENTER, TOP);
-  text("🗺️ MAP", mx + mmW / 2, my - 16);
+  fill(0, 0, 0, 160);
+  noStroke();
+  rect(mx - 6, my - 18, mmW + 12, mmH + 26, 10);
 
   image(mmGfx, mx, my);
 
+  // Direction line
+  stroke(255, 255, 100, 200);
+  strokeWeight(1.5);
+  let px = mx + player.x * MM,
+    py = my + player.y * MM;
+  line(px, py, px + cos(player.angle) * 9, py + sin(player.angle) * 9);
+
+  // Player dot
   noStroke();
   fill(255);
-  circle(mx + player.x * MM_SCALE, my + player.y * MM_SCALE, 8);
-  fill("#e879f9");
-  circle(mx + player.x * MM_SCALE, my + player.y * MM_SCALE, 5);
+  circle(px, py, 7);
+  fill(232, 121, 249);
+  circle(px, py, 4);
 
+  fill(192, 132, 252);
   textSize(8);
+  textStyle(BOLD);
+  textAlign(CENTER, TOP);
+  text("MAP", mx + mmW / 2, my - 13);
+
+  // Legend
+  textSize(7);
   textStyle(NORMAL);
   textAlign(LEFT, TOP);
   fill("#69db7c");
   text("● A", mx, my + mmH + 4);
   fill("#ff8fab");
-  text("● B", mx + 26, my + mmH + 4);
+  text("● B", mx + 24, my + mmH + 4);
   fill("#e879f9");
-  text("● You", mx + 52, my + mmH + 4);
+  text("● You", mx + 48, my + mmH + 4);
 }
 
-// ============================================================
-//  INTRO SCREEN
-// ============================================================
+// ── Intro screen ──────────────────────────────────────────────
 function drawIntro() {
-  background("#f5eeff");
+  background(18, 12, 28);
 
+  // Stars
   noStroke();
-  fill(240, 214, 255, 80);
-  circle(width * 0.2, height * 0.2, 300);
-  fill(180, 230, 255, 60);
-  circle(width * 0.8, height * 0.75, 250);
-  fill(255, 200, 230, 60);
-  circle(width * 0.55, height * 0.85, 200);
+  for (let i = 0; i < 80; i++) {
+    let sx = (i * 137.5) % width,
+      sy = (i * 97.3) % height;
+    fill(150 + ((i * 53) % 105));
+    circle(sx, sy, (i % 3) + 1);
+  }
 
   let cx = width / 2,
     cy = height / 2;
   let pw = 360,
     ph = 430;
 
-  fill(255, 255, 255, 247);
-  stroke("#f0d6ff");
-  strokeWeight(2.5);
-  rect(cx - pw / 2, cy - ph / 2, pw, ph, 26);
+  fill(22, 12, 38, 245);
+  stroke(140, 90, 210);
+  strokeWeight(2);
+  rect(cx - pw / 2, cy - ph / 2, pw, ph, 22);
   noStroke();
 
-  textSize(58);
-  textAlign(CENTER, TOP);
-  text("🚗", cx, cy - ph / 2 + 22);
+  // Mini road preview
+  fill(80, 80, 100);
+  rect(cx - pw / 2 + 4, cy - ph / 2 + 4, pw - 8, 64, 18, 18, 0, 0);
+  stroke(255, 240, 100, 160);
+  strokeWeight(2);
+  for (let i = -2; i <= 2; i++)
+    line(cx, cy - ph / 2 + 4, cx + i * 70, cy - ph / 2 + 68);
+  stroke(135, 206, 250, 100);
+  strokeWeight(1);
+  line(cx - pw / 2 + 4, cy - ph / 2 + 10, cx + pw / 2 - 4, cy - ph / 2 + 10);
+  noStroke();
 
-  fill("#e91e8c");
-  textSize(26);
+  fill(240, 100, 180);
+  textSize(28);
   textStyle(BOLD);
-  text("Crossy Mind", cx, cy - ph / 2 + 90);
-
-  fill("#a78bca");
+  textAlign(CENTER, TOP);
+  text("Crossy Mind", cx, cy - ph / 2 + 78);
+  fill(160, 120, 220);
   textSize(11);
   textStyle(NORMAL);
-  text("☁  EUTHYMIA · BASE LEVEL  ☁", cx, cy - ph / 2 + 124);
+  text("☁  EUTHYMIA · FIRST PERSON VIEW  ☁", cx, cy - ph / 2 + 114);
 
-  drawGoalChip(
-    cx - 110,
-    cy - ph / 2 + 155,
+  // Goal chips
+  drawChip(
+    cx - 115,
+    cy - ph / 2 + 142,
     "🏫",
     "Community Centre",
-    "#69db7c",
+    color("#69db7c"),
     "START",
   );
-  fill("#d8b4fe");
-  textSize(20);
+  fill(180, 150, 240);
+  textSize(18);
   textStyle(BOLD);
   textAlign(CENTER, TOP);
-  text("→", cx, cy - ph / 2 + 168);
-  drawGoalChip(cx + 30, cy - ph / 2 + 155, "🏥", "Hospital", "#ff8fab", "GOAL");
+  text("→", cx, cy - ph / 2 + 158);
+  drawChip(
+    cx + 28,
+    cy - ph / 2 + 142,
+    "🏥",
+    "Hospital",
+    color("#ff8fab"),
+    "GOAL",
+  );
 
-  fill("#9333ea");
+  fill(170, 145, 210);
   textSize(12);
   textStyle(NORMAL);
   textAlign(CENTER, TOP);
-  text("Drive there & back for the round trip!", cx, cy - ph / 2 + 230);
-  text("Stay on the roads 🛣️", cx, cy - ph / 2 + 248);
+  text("Drive A→B and back for a round trip!", cx, cy - ph / 2 + 218);
+  text("Stay on the roads  🛣️", cx, cy - ph / 2 + 236);
 
-  let cbx = cx - 90,
-    cby = cy - ph / 2 + 272;
-  fill(240, 214, 255, 100);
-  stroke("#e9d5ff");
-  strokeWeight(1.5);
-  rect(cbx, cby, 180, 80, 14);
+  // Controls box
+  let cbx = cx - 100,
+    cby = cy - ph / 2 + 262;
+  fill(38, 22, 60, 190);
+  stroke(100, 65, 150);
+  strokeWeight(1);
+  rect(cbx, cby, 200, 90, 12);
   noStroke();
-  fill("#a78bca");
+  fill(160, 120, 220);
   textSize(10);
   textStyle(BOLD);
   textAlign(CENTER, TOP);
   text("CONTROLS", cx, cby + 8);
-
-  drawDpadDiagram(cx, cby + 32);
-
-  fill("#b8a0cc");
-  textSize(9);
-  textStyle(NORMAL);
-  text("Arrow keys move in that direction", cx, cby + 64);
-
-  let btnW = 180,
-    btnH = 46;
-  let btnX = cx - btnW / 2;
-  let btnY = cy + ph / 2 - 70;
-  startBtn = { x: btnX, y: btnY, w: btnW, h: btnH };
-  drawCuteButton(btnX, btnY, btnW, btnH, "Let's Drive! 🚗💨");
-}
-
-function drawDpadDiagram(cx, cy) {
-  let ks = 28;
-  [
-    [1, 0, "↑"],
-    [0, 1, "←"],
-    [1, 1, "↓"],
-    [2, 1, "→"],
-  ].forEach(([col, row, lbl]) => {
-    let kx = cx - ks * 1.5 + col * (ks + 3);
-    let ky = cy + row * (ks + 3);
-    fill("#fff");
-    stroke("#e9d5ff");
-    strokeWeight(1.5);
-    rect(kx, ky, ks, ks, 7);
-    noStroke();
-    fill("#9333ea");
-    textSize(14);
+  let rows = [
+    ["↑ / W", "Drive forward"],
+    ["↓ / S", "Reverse"],
+    ["← → / A D", "Steer"],
+  ];
+  rows.forEach(([k, v], i) => {
+    fill(220, 200, 255);
+    textSize(10);
     textStyle(BOLD);
-    textAlign(CENTER, CENTER);
-    text(lbl, kx + ks / 2, ky + ks / 2);
+    textAlign(RIGHT, TOP);
+    text(k, cx - 6, cby + 26 + i * 19);
+    fill(155, 135, 195);
+    textStyle(NORMAL);
+    textAlign(LEFT, TOP);
+    text(v, cx + 8, cby + 26 + i * 19);
   });
+
+  let bw = 190,
+    bh = 46,
+    bx = cx - bw / 2,
+    by = cy + ph / 2 - 66;
+  startBtn = { x: bx, y: by, w: bw, h: bh };
+  cuteBtn(bx, by, bw, bh, "Start Driving  🚗💨");
 }
 
-// ============================================================
-//  WIN SCREEN
-// ============================================================
+// ── Win screen ────────────────────────────────────────────────
 function drawWin() {
-  background("#f5eeff");
-
+  background(12, 24, 12);
+  let cols = ["#69db7c", "#ff8fab", "#c084fc", "#fff176"];
   noStroke();
-  fill(240, 214, 255, 80);
-  circle(width * 0.2, height * 0.2, 300);
-  fill(255, 200, 230, 60);
-  circle(width * 0.75, height * 0.7, 250);
+  for (let i = 0; i < 60; i++) {
+    fill(cols[i % cols.length]);
+    rect((i * 173.7) % width, (i * 89.3 + frameCount * 0.9) % height, 5, 5, 1);
+  }
 
   let cx = width / 2,
-    cy = height / 2;
-  let pw = 320,
-    ph = 340;
-
-  fill(255, 255, 255, 247);
-  stroke("#f0d6ff");
-  strokeWeight(2.5);
-  rect(cx - pw / 2, cy - ph / 2, pw, ph, 26);
+    cy = height / 2,
+    pw = 320,
+    ph = 310;
+  fill(18, 34, 18, 245);
+  stroke("#69db7c");
+  strokeWeight(2);
+  rect(cx - pw / 2, cy - ph / 2, pw, ph, 22);
   noStroke();
-
-  textSize(60);
   textAlign(CENTER, TOP);
-  text("🎉", cx, cy - ph / 2 + 20);
-
-  fill("#e91e8c");
+  textSize(58);
+  text("🎉", cx, cy - ph / 2 + 16);
+  fill("#69db7c");
   textSize(24);
   textStyle(BOLD);
-  text("Route Complete!", cx, cy - ph / 2 + 90);
-
-  textSize(28);
+  text("Route Complete!", cx, cy - ph / 2 + 84);
+  textSize(26);
   textStyle(NORMAL);
-  text("🏫 → 🏥 → 🏫", cx, cy - ph / 2 + 130);
-
-  fill("#9333ea");
+  text("🏫 → 🏥 → 🏫", cx, cy - ph / 2 + 120);
+  fill(170, 215, 170);
   textSize(12);
-  text("Round trip finished!", cx, cy - ph / 2 + 172);
+  text("Round trip finished!", cx, cy - ph / 2 + 162);
+  textSize(22);
+  text("🌟✨🌟", cx, cy - ph / 2 + 188);
 
-  textSize(24);
-  text("🌟✨🌟", cx, cy - ph / 2 + 198);
-
-  let btnW = 160,
-    btnH = 46;
-  let btnX = cx - btnW / 2;
-  let btnY = cy + ph / 2 - 70;
-  playAgainBtn = { x: btnX, y: btnY, w: btnW, h: btnH };
-  drawCuteButton(btnX, btnY, btnW, btnH, "Play Again 🔄");
+  let bw = 160,
+    bh = 46,
+    bx = cx - bw / 2,
+    by = cy + ph / 2 - 64;
+  playAgainBtn = { x: bx, y: by, w: bw, h: bh };
+  cuteBtn(bx, by, bw, bh, "Play Again 🔄");
 }
 
-// ============================================================
-//  SHARED UI HELPERS
-// ============================================================
-function drawPanel(x, y, w, h) {
-  fill(255, 255, 255, 235);
-  stroke("#f0d6ff");
-  strokeWeight(2);
-  drawingContext.shadowColor = "rgba(200,130,240,0.18)";
-  drawingContext.shadowBlur = 18;
-  drawingContext.shadowOffsetY = 4;
-  rect(x, y, w, h, 20);
-  drawingContext.shadowBlur = 0;
-  drawingContext.shadowOffsetY = 0;
-  noStroke();
-}
+// ── Shared helpers ────────────────────────────────────────────
+function cuteBtn(x, y, w, h, label) {
+  let hov = mouseX > x && mouseX < x + w && mouseY > y && mouseY < y + h;
+  let oy = hov ? -2 : 0;
 
-function drawCuteButton(x, y, w, h, label) {
-  let hover = mouseX > x && mouseX < x + w && mouseY > y && mouseY < y + h;
-  fill(hover ? "#e879f9" : "#d946ef");
+  fill(hov ? color(232, 121, 249) : color(217, 70, 239));
   noStroke();
-  drawingContext.shadowColor = "rgba(217,70,239,0.38)";
-  drawingContext.shadowBlur = hover ? 22 : 14;
-  drawingContext.shadowOffsetY = hover ? 6 : 4;
-  rect(x, y + (hover ? -2 : 0), w, h, h / 2);
+  drawingContext.shadowColor = "rgba(217,70,239,0.5)";
+  drawingContext.shadowBlur = hov ? 22 : 12;
+  drawingContext.shadowOffsetY = hov ? 5 : 3;
+
+  rect(x, y + oy, w, h, h / 2);
+
   drawingContext.shadowBlur = 0;
   drawingContext.shadowOffsetY = 0;
+
   fill(255);
   textSize(14);
   textStyle(BOLD);
   textAlign(CENTER, CENTER);
-  text(label, x + w / 2, y + h / 2 + (hover ? -2 : 0));
+  text(label, x + w / 2, y + h / 2 + oy);
 }
 
-function drawGoalChip(x, y, emoji, label, col, note) {
-  let cw = 110,
-    ch = 70;
-  fill(red(color(col)), green(color(col)), blue(color(col)), 34);
+function drawChip(x, y, emoji, label, col, note) {
+  fill(red(col), green(col), blue(col), 40);
   stroke(col);
-  strokeWeight(2);
-  rect(x, y, cw, ch, 14);
+  strokeWeight(1.5);
+  rect(x, y, 108, 66, 12);
   noStroke();
-
   fill(col);
   textSize(8);
   textStyle(BOLD);
   textAlign(LEFT, TOP);
-  text(note, x + 8, y + 8);
-
+  text(note, x + 8, y + 7);
   textSize(20);
   text(emoji, x + 8, y + 18);
-
-  fill("#555555");
+  fill(210);
   textSize(9);
   textStyle(BOLD);
   text(label, x + 8, y + 46);
 }
 
-function roundedRect(x, y, w, h, r) {
-  rect(x, y, w, h, r);
-}
-
-// ============================================================
-//  INPUT (single mousePressed, no duplicates)
-// ============================================================
+// ── Input ─────────────────────────────────────────────────────
 function mousePressed() {
-  if (screen === "intro") {
+  if (gameScreen === "intro") {
     let b = startBtn;
     if (
       b.w &&
@@ -956,9 +635,9 @@ function mousePressed() {
       mouseY < b.y + b.h
     ) {
       resetGame();
-      screen = "playing";
+      gameScreen = "playing";
     }
-  } else if (screen === "win") {
+  } else if (gameScreen === "win") {
     let b = playAgainBtn;
     if (
       b.w &&
@@ -968,13 +647,16 @@ function mousePressed() {
       mouseY < b.y + b.h
     ) {
       resetGame();
-      screen = "intro";
+      gameScreen = "intro";
     }
   }
 }
 
-// Prevent arrow keys scrolling the page
 function keyPressed() {
-  if ([UP_ARROW, DOWN_ARROW, LEFT_ARROW, RIGHT_ARROW].includes(keyCode))
+  if (
+    [UP_ARROW, DOWN_ARROW, LEFT_ARROW, RIGHT_ARROW, 87, 65, 83, 68].includes(
+      keyCode,
+    )
+  )
     return false;
 }
