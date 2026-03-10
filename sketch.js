@@ -11,6 +11,11 @@ import {
   ARROW_POOL,
 } from "./manicState.js";
 import { drawManicOverlays, drawRoadArrow } from "./manicOverlays.js";
+import {
+  DepressionState,
+  DEPRESSION_SPEED_MULTIPLIER,
+} from "./depressionState.js";
+import { drawDepressionOverlays } from "./depressionOverlays.js";
 
 // ── Constants ────────────────────────────────────────────────
 const ROWS = 40,
@@ -336,6 +341,58 @@ let skipManicEpisode = false;
 
 // ── Manic Episode State (using module) ──────────────────────
 const manicState = new ManicState();
+const depressionState = new DepressionState();
+
+// ── State Notifications ──────────────────────────────────────
+let stateNotifications = [];
+
+function pushStateNotification(text, color = "#f8d67a", duration = 2.4) {
+  stateNotifications.push({ text, color, life: duration, maxLife: duration });
+}
+
+function updateStateNotifications(dt) {
+  stateNotifications.forEach((n) => {
+    n.life -= dt;
+  });
+  stateNotifications = stateNotifications.filter((n) => n.life > 0);
+}
+
+function drawStateNotifications() {
+  if (!stateNotifications.length) return;
+
+  const n = stateNotifications[0];
+  const fade = Math.min(
+    1,
+    Math.min(n.life / 0.35, (n.maxLife - n.life) / 0.35),
+  );
+  const y = 46;
+
+  ctx.save();
+  ctx.globalAlpha = fade;
+  ctx.font = '800 16px "Segoe UI", sans-serif';
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+
+  const txtW = ctx.measureText(n.text).width;
+  const padX = 18;
+  const boxW = txtW + padX * 2;
+  const boxH = 34;
+  const boxX = W / 2 - boxW / 2;
+  const boxY = y - boxH / 2;
+
+  ctx.fillStyle = "rgba(6, 8, 14, 0.75)";
+  ctx.roundRect(boxX, boxY, boxW, boxH, 14);
+  ctx.fill();
+
+  ctx.strokeStyle = n.color;
+  ctx.lineWidth = 1.5;
+  ctx.roundRect(boxX, boxY, boxW, boxH, 14);
+  ctx.stroke();
+
+  ctx.fillStyle = n.color;
+  ctx.fillText(n.text, W / 2, y);
+  ctx.restore();
+}
 
 function resetGame() {
   // Start in centre of right lane (lower tile of the eastbound road)
@@ -347,6 +404,9 @@ function resetGame() {
 
   // Reset manic state using module
   manicState.reset();
+  manicState._notifiedStart = false;
+  depressionState.reset();
+  stateNotifications = [];
 
   buildScene();
 }
@@ -374,6 +434,16 @@ function showGame() {
   gameState = "playing";
 }
 function showWin() {
+  if (manicState.manicMode) {
+    pushStateNotification("MANIC STATE ENDING", "#f5b347", 2.0);
+  }
+  if (depressionState.depressionMode) {
+    pushStateNotification("DEPRESSION STATE ENDING", "#9eb1ff", 2.0);
+  }
+  manicState.manicMode = false;
+  manicState.manicIntensity = 0;
+  depressionState.depressionMode = false;
+  depressionState.depressionIntensity = 0;
   document.getElementById("hud").style.display = "none";
   document.getElementById("compass").style.display = "none";
   document.getElementById("minimap-wrap").style.display = "none";
@@ -438,6 +508,14 @@ function loop(t) {
     reducedEffectsMode,
   );
 
+  if (!manicState._notifiedStart && manicState.manicMode && !skipManicEpisode) {
+    manicState._notifiedStart = true;
+    pushStateNotification("MANIC STATE STARTING", "#f8c14f", 2.2);
+  }
+
+  depressionState.update(dt, pulse, reducedEffectsMode);
+  updateStateNotifications(dt);
+
   update(dt);
   render();
   updateHUD();
@@ -450,9 +528,16 @@ requestAnimationFrame(loop);
 //  UPDATE
 // ================================================================
 function update(dt) {
-  let speedMult = manicState.manicMode ? MANIC_SPEED_MULTIPLIER : 1.0;
+  let speedMult = 1.0;
+  if (manicState.manicMode) speedMult = MANIC_SPEED_MULTIPLIER;
+  if (depressionState.depressionMode) speedMult = DEPRESSION_SPEED_MULTIPLIER;
+
   let maxSpeed = MOVE_SPEED * speedMult;
   let accelRate = ACCEL * speedMult;
+
+  if (depressionState.depressionMode) {
+    accelRate *= 0.52;
+  }
 
   if (manicState.manicMode && manicState.manicIntensity > 0.4) {
     speedMult *= 1 + Math.sin(pulse * 3) * 0.15 * manicState.manicIntensity;
@@ -532,7 +617,27 @@ function update(dt) {
 
   if (tripPhase === 0) {
     let dd = Math.hypot(P.x - GB.x, P.y - GB.y);
-    if (dd < GOAL_R) tripPhase = 1; // reached hospital, now go back
+    if (dd < GOAL_R) {
+      // Reaching the hospital ends manic and starts depression.
+      if (manicState.manicMode && !depressionState.depressionMode) {
+        manicState.manicMode = false;
+        manicState.manicIntensity = 0;
+        manicState.activeThoughts = [];
+        manicState.activeArrowIdx = -1;
+        manicState.arrowFadeAlpha = 0;
+        manicState.phantomSprites = [];
+        manicState.screenRotation = 0;
+        manicState.shakeOffsetX = 0;
+        manicState.shakeOffsetY = 0;
+        manicState.compassDrift = 0;
+        manicState.worldBloom = 0;
+
+        depressionState.trigger(pulse);
+        pushStateNotification("MANIC STATE ENDING", "#f5b347", 2.0);
+        pushStateNotification("DEPRESSION STATE STARTING", "#9eb1ff", 2.4);
+      }
+      tripPhase = 1; // reached hospital, now go back
+    }
   } else {
     let dd = Math.hypot(P.x - GA.x, P.y - GA.y);
     if (dd < GOAL_R) showWin();
@@ -558,11 +663,18 @@ function render() {
     let g = (210 + t * 22) | 0;
     let b = (255 - t * 10) | 0;
 
-    // Apply manic sky effects
-    let skyColors = manicState.applySkyEffects(r, g, b, t, pulse);
-    r = skyColors.r;
-    g = skyColors.g;
-    b = skyColors.b;
+    if (depressionState.depressionMode) {
+      let skyColors = depressionState.applySkyEffects(r, g, b, t, pulse);
+      r = skyColors.r;
+      g = skyColors.g;
+      b = skyColors.b;
+    } else {
+      // Apply manic sky effects
+      let skyColors = manicState.applySkyEffects(r, g, b, t, pulse);
+      r = skyColors.r;
+      g = skyColors.g;
+      b = skyColors.b;
+    }
 
     let col = 0xff000000 | (b << 16) | (g << 8) | r;
     buf.fill(col, y * W2, y * W2 + W2);
@@ -667,6 +779,13 @@ function render() {
         b = grassColors.b;
       }
 
+      if (depressionState.depressionMode) {
+        const wd = depressionState.applyWorldEffects(r, g, b);
+        r = wd.r;
+        g = wd.g;
+        b = wd.b;
+      }
+
       const vdim = 0.85 + 0.15 * (1 - p / (H2 - hor));
       const f = fog * vdim;
       r = (r * f) | 0;
@@ -731,6 +850,7 @@ function render() {
     pd = Math.max(pd, 0.01);
     zb[col] = pd;
     let wallH = (H2 / pd) | 0;
+    wallH = depressionState.applyProjectionStretch(col, W2, wallH) | 0;
     let top = Math.max(0, (hor - wallH / 2) | 0);
     let bot = Math.min(H2 - 1, (hor + wallH / 2) | 0);
     let fog = Math.max(0.06, 1 - pd / MAX_D);
@@ -757,6 +877,13 @@ function render() {
       wr = 140;
       wg = 140;
       wb = 140;
+    }
+
+    if (depressionState.depressionMode) {
+      const wd = depressionState.applyWorldEffects(wr, wg, wb);
+      wr = wd.r;
+      wg = wd.g;
+      wb = wd.b;
     }
 
     // In manic mode: walls glow more warmly/vividly
@@ -855,6 +982,7 @@ function render() {
     let sx = (0.5 + sa / FOV) * W2;
     let fog = Math.max(0.06, 1 - sd / MAX_D);
     let spH = (H2 / sd) | 0;
+    spH = depressionState.applyProjectionStretch(sx, W2, spH) | 0;
     let spW = spH;
     let startX = (sx - spW / 2) | 0;
     let startY = (hor - spH / 2) | 0;
@@ -950,6 +1078,21 @@ function render() {
       MANIC_SPEED_MULTIPLIER,
     );
   }
+
+  if (
+    depressionState.depressionMode &&
+    depressionState.depressionIntensity > 0
+  ) {
+    drawDepressionOverlays(
+      ctx,
+      W,
+      H,
+      depressionState.depressionIntensity,
+      pulse,
+    );
+  }
+
+  drawStateNotifications();
 }
 
 // ── Sprite utils ────────────────────────────────────────────
@@ -1453,8 +1596,16 @@ function drawCar3D(sx, sy, sw, sh, sd, fog, cr, cg, cb) {
 // ================================================================
 function updateHUD() {
   let hudTag = document.getElementById("hud-tag");
-  hudTag.textContent = "";
-  hudTag.style.color = "";
+  if (depressionState.depressionMode) {
+    hudTag.textContent = "🌙 DEPRESSION STATE";
+    hudTag.style.color = "#9eb1ff";
+  } else if (manicState.manicMode && !skipManicEpisode) {
+    hudTag.textContent = "⚡ MANIC STATE";
+    hudTag.style.color = "#f5b347";
+  } else {
+    hudTag.textContent = "🌿 EUTHYMIA · BASE LEVEL";
+    hudTag.style.color = "#c084fc";
+  }
   hudTag.style.animation = "";
 
   let spd = Math.abs(P.spd);
