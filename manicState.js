@@ -4,7 +4,7 @@
 // ================================================================
 
 // ── Manic Episode Configuration ─────────────────────────────
-export const MANIC_CHECKPOINT_ZONE = { x: 18.5, y: 18.5, radius: 2.5 };
+export const MANIC_CHECKPOINT_ZONE = { x: 26.5, y: 26.5, radius: 2.5 };
 export const MANIC_SPEED_MULTIPLIER = 5.0;
 export const MANIC_RAMP_DURATION = 30; // reaches full intensity in 30 seconds
 
@@ -47,40 +47,40 @@ export const GRANDIOSITY_MESSAGES = [
 // ── Arrow Pool for Misdirection ─────────────────────────────
 export const ARROW_POOL = [
   // Early map — near start, mislead immediately
-  { x: 6.5, y: 4.5, dir: -Math.PI / 2 },
-  { x: 4.5, y: 7.0, dir: Math.PI / 2 },
-  { x: 7.0, y: 3.5, dir: Math.PI },
-  // Mid-map horizontal roads
-  { x: 11.0, y: 10.5, dir: Math.PI },
-  { x: 14.5, y: 11.5, dir: -Math.PI / 2 },
-  { x: 6.5, y: 10.5, dir: Math.PI },
-  { x: 19.0, y: 10.5, dir: 0 },
-  { x: 22.0, y: 11.5, dir: Math.PI / 2 },
-  // Mid-map vertical roads
-  { x: 10.5, y: 7.0, dir: -Math.PI / 2 },
-  { x: 10.5, y: 14.5, dir: 0 },
-  { x: 10.5, y: 22.0, dir: -Math.PI / 2 },
-  { x: 18.5, y: 7.0, dir: Math.PI },
-  { x: 18.5, y: 14.5, dir: Math.PI / 2 },
-  // Row 18 horizontal
-  { x: 7.0, y: 18.5, dir: Math.PI },
-  { x: 14.5, y: 18.5, dir: -Math.PI / 2 },
-  { x: 17.0, y: 18.5, dir: Math.PI },
-  { x: 22.0, y: 18.5, dir: Math.PI / 2 },
-  // Approaching hospital quadrant
-  { x: 18.5, y: 22.0, dir: Math.PI / 2 },
-  { x: 18.5, y: 25.0, dir: -Math.PI / 2 },
-  { x: 22.0, y: 26.5, dir: -Math.PI / 2 },
-  { x: 25.0, y: 26.5, dir: Math.PI },
-  { x: 26.5, y: 22.0, dir: -Math.PI / 2 },
-  { x: 26.5, y: 29.0, dir: -Math.PI / 2 },
-  { x: 29.0, y: 26.5, dir: 0 },
-  // Near hospital
-  { x: 27.0, y: 34.5, dir: 0 },
-  { x: 30.5, y: 35.0, dir: Math.PI / 2 },
-  { x: 34.5, y: 22.0, dir: Math.PI },
-  { x: 34.5, y: 29.0, dir: Math.PI / 2 },
-  { x: 30.5, y: 27.0, dir: -Math.PI / 2 },
+  { x: 8.5, y: 4.5, dir: -Math.PI / 2 },
+  { x: 4.5, y: 8.5, dir: Math.PI / 2 },
+  { x: 10.5, y: 3.5, dir: Math.PI },
+  // Mid-map horizontal roads (row 13, 23)
+  { x: 18.5, y: 13.5, dir: Math.PI },
+  { x: 28.5, y: 14.5, dir: -Math.PI / 2 },
+  { x: 8.5, y: 13.5, dir: Math.PI },
+  { x: 38.5, y: 13.5, dir: 0 },
+  { x: 48.5, y: 14.5, dir: Math.PI / 2 },
+  // Mid-map vertical roads (col 13, 23)
+  { x: 13.5, y: 8.5, dir: -Math.PI / 2 },
+  { x: 13.5, y: 18.5, dir: 0 },
+  { x: 13.5, y: 28.5, dir: -Math.PI / 2 },
+  { x: 23.5, y: 8.5, dir: Math.PI },
+  { x: 23.5, y: 18.5, dir: Math.PI / 2 },
+  // Row 23 horizontal
+  { x: 8.5, y: 23.5, dir: Math.PI },
+  { x: 18.5, y: 23.5, dir: -Math.PI / 2 },
+  { x: 28.5, y: 23.5, dir: Math.PI },
+  { x: 38.5, y: 23.5, dir: Math.PI / 2 },
+  // Approaching goal quadrant
+  { x: 33.5, y: 28.5, dir: Math.PI / 2 },
+  { x: 33.5, y: 38.5, dir: -Math.PI / 2 },
+  { x: 38.5, y: 33.5, dir: -Math.PI / 2 },
+  { x: 43.5, y: 33.5, dir: Math.PI },
+  { x: 33.5, y: 43.5, dir: -Math.PI / 2 },
+  { x: 43.5, y: 43.5, dir: Math.PI / 2 },
+  // Far end near Recreation Centre
+  { x: 48.5, y: 38.5, dir: 0 },
+  { x: 48.5, y: 43.5, dir: Math.PI },
+  { x: 43.5, y: 48.5, dir: Math.PI / 2 },
+  { x: 38.5, y: 43.5, dir: -Math.PI / 2 },
+  { x: 48.5, y: 33.5, dir: Math.PI / 2 },
+  { x: 38.5, y: 48.5, dir: 0 },
 ];
 
 // ── Manic State ──────────────────────────────────────────────
@@ -308,8 +308,8 @@ export class ManicState {
   }
 
   spawnPhantomSprite(playerPos) {
-    const COLS = 40,
-      ROWS = 40;
+    const COLS = 56,
+      ROWS = 56;
     let angle = Math.random() * Math.PI * 2;
     let dist = 5 + Math.random() * 10;
     let x = Math.max(

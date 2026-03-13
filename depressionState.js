@@ -4,7 +4,7 @@
 // ================================================================
 
 // ── Depression Configuration ───────────────────────────────────
-export const DEPRESSION_CHECKPOINT_ZONE = { x: 26.5, y: 26.5, radius: 2.3 };
+export const DEPRESSION_CHECKPOINT_ZONE = { x: 46.5, y: 46.5, radius: 2.3 };
 export const DEPRESSION_SPEED_MULTIPLIER = 0.38;
 export const DEPRESSION_RAMP_DURATION = 22; // reaches full intensity in 22s
 
